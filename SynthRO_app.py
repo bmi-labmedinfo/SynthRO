@@ -1,5 +1,3 @@
-import base64
-import io
 import os
 
 import dash
@@ -11,31 +9,16 @@ import plotly.figure_factory as ff
 import plotly.graph_objs as go
 import plotly.io as pio
 import scipy.stats as stats
-import umap
 from dash import dcc, html, dash_table, ctx
 from dash.dependencies import Input, Output, State, ALL
 from dash.exceptions import PreventUpdate
 from plotly.subplots import make_subplots
-from pyhtml2pdf import converter
-from scipy.spatial import distance
-from scipy.stats import chi2_contingency
-from sklearn.compose import ColumnTransformer
-from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error, \
-    confusion_matrix, auc
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import mean_squared_error, auc
 from sklearn.model_selection import train_test_split
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neighbors import LocalOutlierFactor
-from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, OneHotEncoder
-from sklearn.svm import SVC
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from multiprocessing import Pool
 from itertools import repeat
-import itertools
+from utils import GeneralUtils as utils, ResemblanceMetrics as ResMet, UtilityMetrics as UtiMet, PrivacyMetrics as PriMet
 
 global real_data, synthetic_datasets, dict_features_type, num_features, cat_features, real_train_data, real_test_data, encoder_labels
 
@@ -270,19 +253,12 @@ page_1 = html.Div([
 ])
 
 
-def parse_contents(contents):
-    content_type, content_string = contents.split(',')
-    decoded = base64.b64decode(content_string).decode('utf-8')
-    df = pd.read_csv(io.StringIO(decoded))
-    return df
-
-
 @app.callback(Output('output-data-upload-real', 'children'),
               Input('upload-data-real', 'contents'))
 def update_table_real(contents):
     global real_data, synthetic_datasets
     if contents is not None:
-        real_data = parse_contents(contents)
+        real_data = utils.parse_contents(contents)
 
         global encoder_labels
         encoder_labels = LabelEncoder()
@@ -327,7 +303,7 @@ def update_table_syn(contents):
     global synthetic_datasets, real_data
     if contents is not None:
         with Pool(round(n_cpu * 0.75)) as pool:
-            synthetic_datasets = pool.map(parse_contents, contents)
+            synthetic_datasets = pool.map(utils.parse_contents, contents)
 
         # correction different synthetic dataset sizes
         synthetic_datasets = [
@@ -382,7 +358,7 @@ def update_table_type(contents, children):
     global dict_features_type, num_features, cat_features
 
     if ctx.triggered[0]['prop_id'] == 'upload-data-type.contents' and contents:
-        df = parse_contents(contents)
+        df = utils.parse_contents(contents)
     elif ctx.triggered[0]['prop_id'] == 'output-data-upload-real.children' and children:
         df = pd.DataFrame({'Feature': real_data.columns.tolist(), 'Type': ''})
         for c in real_data.columns.tolist():
@@ -584,104 +560,6 @@ page_2_ura = html.Div([
 ])
 
 
-def ks_tests(real, synthetic):
-    attribute_names = real.columns
-    p_values = list()
-
-    for c in attribute_names:
-        _, p = stats.ks_2samp(real[c], synthetic[c])
-        p_values.append(np.round(p, 5))
-
-    dict_pvalues = dict(zip(attribute_names, p_values))
-
-    return dict_pvalues
-
-
-def student_t_tests(real, synthetic):
-    attribute_names = real.columns
-    p_values = list()
-
-    for c in attribute_names:
-        _, p = stats.ttest_ind(real[c], synthetic[c])
-        p_values.append(np.round(p, 5))
-
-    dict_pvalues = dict(zip(attribute_names, p_values))
-
-    return dict_pvalues
-
-
-def mann_whitney_tests(real, synthetic):
-    attribute_names = real.columns
-    p_values = list()
-
-    for c in attribute_names:
-        _, p = stats.mannwhitneyu(real[c], synthetic[c])
-        p_values.append(np.round(p, 5))
-
-    dict_pvalues = dict(zip(attribute_names, p_values))
-
-    return dict_pvalues
-
-
-def chi_squared_tests(real, synthetic):
-    attribute_names = real.columns
-    p_values = list()
-
-    for c in attribute_names:
-        observed = pd.crosstab(real[c], synthetic[c])
-        _, p, _, _ = chi2_contingency(observed)
-        p_values.append(np.round(p, 5))
-
-    dict_pvalues = dict(zip(attribute_names, p_values))
-
-    return dict_pvalues
-
-
-def cosine_distances(real, synthetic):
-    attribute_names = real.columns
-    distances = list()
-
-    for c in attribute_names:
-        distances.append(distance.cosine(real[c].values, synthetic[c].values))
-
-    dict_distances = dict(zip(attribute_names, np.round(distances, 5)))
-
-    return dict_distances
-
-
-def js_distances(real, synthetic):
-    attribute_names = real.columns
-    distances = list()
-
-    for c in attribute_names:
-        prob_distribution_real = stats.gaussian_kde(real[c].values).pdf(real[c].values)
-        prob_distribution_synthetic = stats.gaussian_kde(real[c].values).pdf(synthetic[c].values)
-        distances.append(distance.jensenshannon(prob_distribution_real, prob_distribution_synthetic))
-
-    dict_distances = dict(zip(attribute_names, np.round(distances, 5)))
-
-    return dict_distances
-
-
-def wass_distances(real, synthetic):
-    attribute_names = real.columns
-    distances = list()
-
-    for c in attribute_names:
-        distances.append(stats.wasserstein_distance(real[c].values, synthetic[c].values))
-
-    dict_distances = dict(zip(attribute_names, np.round(distances, 5)))
-
-    return dict_distances
-
-
-def scale_data(df):
-    scaler = MinMaxScaler()
-    scaled = scaler.fit_transform(df)
-
-    return pd.DataFrame(scaled, columns=df.columns.tolist())
-
-
 @app.callback(Output('output-table-pvalue-num', 'children'),
               Output({"type": "data-report", "index": 0}, 'data'),
               Input('dropdown-test-num', 'value'),
@@ -691,13 +569,13 @@ def update_table_pvalue_num(value):
 
         if value == 'ks_test':
             with Pool(round(n_cpu * 0.75)) as pool:
-                dict_pvalues = pool.starmap(ks_tests, zip(repeat(real_data[num_features]), synthetic_datasets))
+                dict_pvalues = pool.starmap(ResMet.URA.ks_tests, zip(repeat(real_data[num_features]), synthetic_datasets))
         elif value == 't_test':
             with Pool(round(n_cpu * 0.75)) as pool:
-                dict_pvalues = pool.starmap(student_t_tests, zip(repeat(real_data[num_features]), synthetic_datasets))
+                dict_pvalues = pool.starmap(ResMet.URA.student_t_tests, zip(repeat(real_data[num_features]), synthetic_datasets))
         elif value == 'u_test':
             with Pool(round(n_cpu * 0.75)) as pool:
-                dict_pvalues = pool.starmap(mann_whitney_tests,
+                dict_pvalues = pool.starmap(ResMet.URA.mann_whitney_tests,
                                             zip(repeat(real_data[num_features]), synthetic_datasets))
 
         dfs = [pd.DataFrame(list(d.items()), columns=['Feature', 'p value']) for d in dict_pvalues]
@@ -763,7 +641,7 @@ def update_table_pvalue_cat(value):
 
         if value == 'chi_test':
             with Pool(round(n_cpu * 0.75)) as pool:
-                dict_pvalues = pool.starmap(chi_squared_tests, zip(repeat(real_data[cat_features]), synthetic_datasets))
+                dict_pvalues = pool.starmap(ResMet.URA.chi_squared_tests, zip(repeat(real_data[cat_features]), synthetic_datasets))
 
         dfs = [pd.DataFrame(list(d.items()), columns=['Feature', 'p value']) for d in dict_pvalues]
 
@@ -828,14 +706,16 @@ def update_table_dist(value):
 
         if value == 'cos_dist':
             with Pool(round(n_cpu * 0.75)) as pool:
-                dict_distances = pool.starmap(cosine_distances,
+                dict_distances = pool.starmap(ResMet.URA.cosine_distances,
                                               zip(repeat(real_data[num_features]), synthetic_datasets))
         elif value == 'js_dist':
             with Pool(round(n_cpu * 0.75)) as pool:
-                dict_distances = pool.starmap(js_distances, zip(repeat(real_data[num_features]), synthetic_datasets))
+                dict_distances = pool.starmap(ResMet.URA.js_distances,
+                                              zip(repeat(real_data[num_features]), synthetic_datasets))
         elif value == 'w_dist':
             with Pool(round(n_cpu * 0.75)) as pool:
-                dict_distances = pool.starmap(wass_distances, zip(repeat(real_data[num_features]), synthetic_datasets))
+                dict_distances = pool.starmap(ResMet.URA.wass_distances,
+                                              zip(repeat(real_data[num_features]), synthetic_datasets))
 
         dfs = [pd.DataFrame(list(d.items()), columns=['Feature', 'Distance value']) for d in dict_distances]
 
@@ -1183,27 +1063,6 @@ def change_label_type(value):
             return ["categorical"]
 
 
-def compute_correlations_matrices(df, type):
-    if type == "corr_num":
-        return df[num_features].corr(method='pearson')
-    else:  # "corr_cat"
-        factors_paired = list(itertools.product(df[cat_features].columns, repeat=2))
-
-        chi2 = []
-
-        for f in factors_paired:
-            if f[0] != f[1]:
-                chitest = chi2_contingency(pd.crosstab(df[f[0]], df[f[1]]))
-                chi2.append(chitest[0])
-            else:
-                chi2.append(0)
-
-        chi2 = np.array(chi2).reshape((-1, len(cat_features)))
-        chi2 = pd.DataFrame(chi2, index=df[cat_features].columns, columns=df[cat_features].columns)
-
-        return (chi2 - np.min(chi2, axis=None)) / np.ptp(chi2, axis=None)
-
-
 @app.callback(Output('output-corr-mat', 'children'),
               Output({"type": "data-report", "index": 3}, 'data'),
               Input('dropdown-corr-mat', 'value'),
@@ -1213,18 +1072,18 @@ def update_graphs(value, radio):
     if value is not None:
 
         if value == "corr_num":
-            mat_real = compute_correlations_matrices(real_data, value)
+            mat_real = ResMet.MRA.compute_correlations_matrices(real_data, value, num_features)
 
             with Pool(round(n_cpu * 0.75 / 3)) as pool:
-                mats_syns = pool.starmap(compute_correlations_matrices,
-                                         zip(synthetic_datasets, repeat(value)))
+                mats_syns = pool.starmap(ResMet.MRA.compute_correlations_matrices,
+                                         zip(synthetic_datasets, repeat(value), repeat(num_features)))
 
         elif value == "corr_cat":
-            mat_real = compute_correlations_matrices(real_data, value)
+            mat_real = ResMet.MRA.compute_correlations_matrices(real_data, value, cat_features)
 
             with Pool(round(n_cpu * 0.75 / 3)) as pool:
-                mats_syns = pool.starmap(compute_correlations_matrices,
-                                         zip(synthetic_datasets, repeat(value)))
+                mats_syns = pool.starmap(ResMet.MRA.compute_correlations_matrices,
+                                         zip(synthetic_datasets, repeat(value), repeat(cat_features)))
 
         if radio == "rs":
             fig1 = px.imshow(mat_real, aspect="auto")
@@ -1320,26 +1179,16 @@ def update_graphs(value, radio):
         return children, []
 
 
-def check_lof(dataset):
-    clf = LocalOutlierFactor(n_neighbors=2)
-
-    labels_out = clf.fit_predict(dataset)
-
-    neg_lof_score = clf.negative_outlier_factor_
-
-    return neg_lof_score
-
-
 @app.callback(Output('output-boxplot', 'children'),
               Output({"type": "data-report", "index": 4}, 'data'),
               Input('title-outlier', 'children'))
 def update_graphs(children_in):
     if children_in is not None:
 
-        neg_lof_score_real = check_lof(real_data)
+        neg_lof_score_real = ResMet.MRA.check_lof(real_data)
 
         with Pool(round(n_cpu * 0.75 / 3)) as pool:
-            neg_lof_score_syns = pool.map(check_lof, synthetic_datasets)
+            neg_lof_score_syns = pool.map(ResMet.MRA.check_lof, synthetic_datasets)
 
         tabs = []
         figs = []
@@ -1379,24 +1228,16 @@ def update_graphs(children_in):
         return children, fig
 
 
-def do_pca(dataset):
-    pca = PCA()
-    pca.fit(dataset)
-    var_ratio_cum = np.cumsum(pca.explained_variance_ratio_ * 100)
-
-    return var_ratio_cum
-
-
 @app.callback(Output({"type": "data-report", "index": 5}, 'data'),
               Output('output-pca', 'children'),
               Input('title-pca', 'children'))
 def update_graphs(children_in):
     if children_in is not None:
 
-        real_var_ratio_cum = do_pca(real_data)
+        real_var_ratio_cum = ResMet.MRA.do_pca(real_data)
 
         with Pool(round(n_cpu * 0.75 / 3)) as pool:
-            syns_var_ratio_cum = pool.map(do_pca, synthetic_datasets)
+            syns_var_ratio_cum = pool.map(ResMet.MRA.do_pca, synthetic_datasets)
 
         components = list(range(1, len(real_var_ratio_cum) + 1))
 
@@ -1461,12 +1302,6 @@ def update_table_pca(id_tab, data):
         return children
 
 
-def do_umap(dataset, num_neighbors, min_dist):
-    reducer = umap.UMAP(n_neighbors=num_neighbors, min_dist=min_dist, n_components=2)
-    embedding = reducer.fit_transform(dataset)
-    return embedding
-
-
 @app.callback(Output('output-umap', 'children'),
               Output({"type": "data-report", "index": 6}, 'data'),
               [Input('run-umap', 'n_clicks')],
@@ -1478,7 +1313,7 @@ def run_code_on_click(n_clicks, num_neighbors, min_dist, radio):
         if radio == "rs":
 
             with Pool(round(n_cpu * 0.90 / 3)) as pool:
-                embeddings = pool.starmap(do_umap,
+                embeddings = pool.starmap(ResMet.MRA.do_umap,
                                           zip([real_data] + synthetic_datasets, repeat(num_neighbors),
                                               repeat(min_dist)))
 
@@ -1525,7 +1360,7 @@ def run_code_on_click(n_clicks, num_neighbors, min_dist, radio):
                 concatenated_dfs.append(pd.concat([real_data, syn_data], ignore_index=True))
 
             with Pool(round(n_cpu * 0.90 / 3)) as pool:
-                embeddings = pool.starmap(do_umap,
+                embeddings = pool.starmap(ResMet.MRA.do_umap,
                                           zip(concatenated_dfs, repeat(num_neighbors), repeat(min_dist)))
 
             tabs = []
@@ -1623,55 +1458,6 @@ page_2_dla = html.Div([
 ])
 
 
-def classify_real_vs_synthetic_data(models_names, real, synthetic, numeric_features, categorical_features):
-    real["label"] = 0
-    synthetic["label"] = 1
-
-    combined_data = pd.concat([real, synthetic], ignore_index=True)
-
-    train_data, test_data, train_labels, test_labels = train_test_split(combined_data.drop("label", axis=1),
-                                                                        combined_data["label"], test_size=0.2)
-
-    numeric_transformer = StandardScaler()
-
-    data = pd.concat([train_data, test_data], ignore_index=True)
-    categories_list = [np.unique(data[col]) for col in categorical_features]
-    categorical_transformer = OneHotEncoder(categories=categories_list)
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("numeric", numeric_transformer, numeric_features),
-            ("categorical", categorical_transformer, categorical_features)
-        ])
-
-    train_data_preprocessed = preprocessor.fit_transform(train_data)
-    test_data_preprocessed = preprocessor.transform(test_data)
-
-    classifiers = {'RF': RandomForestClassifier(n_estimators=100, random_state=9, n_jobs=3),
-                   'KNN': KNeighborsClassifier(n_neighbors=9, n_jobs=3),
-                   'DT': DecisionTreeClassifier(random_state=9),
-                   'SVM': SVC(C=100, max_iter=300, kernel='linear', probability=True, random_state=9),
-                   'MLP': MLPClassifier(hidden_layer_sizes=(128, 64, 32), max_iter=300, random_state=9)}
-
-    results = pd.DataFrame(columns=['model', 'accuracy', 'precision', 'recall', 'f1'])
-
-    for clas_name in models_names:
-        classifiers[clas_name].fit(train_data_preprocessed, train_labels)
-
-        predictions = classifiers[clas_name].predict(test_data_preprocessed)
-
-        clas_results = pd.DataFrame([[clas_name,
-                                      np.round(accuracy_score(test_labels, predictions), 4),
-                                      np.round(precision_score(test_labels, predictions), 4),
-                                      np.round(recall_score(test_labels, predictions), 4),
-                                      np.round(f1_score(test_labels, predictions), 4)]],
-                                    columns=results.columns)
-
-        results = pd.concat([results, clas_results], ignore_index=True)
-
-    return results
-
-
 @app.callback(Output('sec-dla', 'children'),
               Output('output-boxplot-dla', 'children'),
               Output({"type": "data-report", "index": 7}, 'data'),
@@ -1682,7 +1468,7 @@ def fill_with_results(n_clicks, selected_models):
     if n_clicks is not None and selected_models is not None:
 
         with Pool(round(n_cpu * 0.75)) as pool:
-            results_dla = pool.starmap(classify_real_vs_synthetic_data,
+            results_dla = pool.starmap(ResMet.DLA.classify_real_vs_synthetic_data,
                                        zip(repeat(selected_models), repeat(real_data.copy()), synthetic_datasets.copy(),
                                            repeat(num_features), repeat(cat_features)))
 
@@ -1904,7 +1690,7 @@ def upload_train_dataset(contents, n_clicks):
         return False, 'primary'
 
     if contents is not None:
-        real_train_data = parse_contents(contents)
+        real_train_data = utils.parse_contents(contents)
 
         if list(real_data.columns) == list(real_train_data.columns):
             for col in real_data.columns:
@@ -1930,7 +1716,7 @@ def upload_test_dataset(contents, n_clicks):
         return False, 'primary'
 
     if contents is not None:
-        real_test_data = parse_contents(contents)
+        real_test_data = utils.parse_contents(contents)
 
         if list(real_data.columns) == list(real_test_data.columns):
             for col in real_data.columns:
@@ -1940,48 +1726,6 @@ def upload_test_dataset(contents, n_clicks):
         else:
             real_test_data = pd.DataFrame()
             return True, 'primary'
-
-
-def train_test_model(model_name, train_data, test_data, train_labels, test_labels, numeric_features,
-                     categorical_features):
-    models = {
-        "RF": RandomForestClassifier(n_estimators=100, n_jobs=3, random_state=10),
-        "KNN": KNeighborsClassifier(n_neighbors=10, n_jobs=3),
-        "DT": DecisionTreeClassifier(random_state=10),
-        "SVM": SVC(C=100, max_iter=300, kernel='linear', probability=True, random_state=10),
-        "MLP": MLPClassifier(hidden_layer_sizes=(128, 64, 32), max_iter=300, random_state=10)
-    }
-
-    model = models[model_name]
-
-    train_labels = train_labels.astype(str)
-    test_labels = test_labels.astype(str)
-
-    numeric_transformer = StandardScaler()
-    data = pd.concat([train_data, test_data], ignore_index=True)
-    categories_list = [np.unique(data[col]) for col in categorical_features]
-    categorical_transformer = OneHotEncoder(categories=categories_list)
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("numeric", numeric_transformer, numeric_features),
-            ("categorical", categorical_transformer, categorical_features)
-        ])
-
-    train_data_preprocessed = preprocessor.fit_transform(train_data)
-    test_data_preprocessed = preprocessor.transform(test_data)
-
-    model.fit(train_data_preprocessed, train_labels)
-    predictions = model.predict(test_data_preprocessed)
-
-    results = pd.DataFrame([[model_name,
-                             np.round(accuracy_score(test_labels, predictions), 4),
-                             np.round(precision_score(test_labels, predictions, average=None)[-1], 4),
-                             np.round(recall_score(test_labels, predictions, average=None)[-1], 4),
-                             np.round(f1_score(test_labels, predictions, average=None)[-1], 4)]],
-                           columns=['model', 'accuracy', 'precision', 'recall', 'f1'])
-
-    return results, confusion_matrix(test_labels, predictions)
 
 
 @app.callback(Output('output-utl-trtr', 'children'),
@@ -2018,7 +1762,7 @@ def run_code_on_click(n_clicks, target, classifier):
             train_labels_s.append(train_labels)
 
         with Pool(round(n_cpu * 0.75)) as pool:
-            results_utl = pool.starmap(train_test_model,
+            results_utl = pool.starmap(UtiMet.train_test_model,
                                        zip(repeat(classifier), [train_data_r] + train_data_s, repeat(test_data_r),
                                            [train_labels_r] + train_labels_s, repeat(test_labels_r),
                                            repeat(num), repeat(cat)))
@@ -2155,28 +1899,6 @@ page_4_sea = html.Div([
 ])
 
 
-def pairwise_euclidean_distance(real, synthetic):
-    r = scale_data(real)
-    s = scale_data(synthetic)
-    distances = distance.cdist(r, s, 'euclidean')
-
-    return np.round(distances, 4)
-
-
-def str_similarity(real, synthetic):
-    distances = cosine_similarity(real, synthetic)
-
-    return np.round(distances, 4)
-
-
-def hausdorff_distance(real, synthetic):
-    r = scale_data(real)
-    s = scale_data(synthetic)
-    distances = max(distance.directed_hausdorff(r, s)[0], distance.directed_hausdorff(s, r)[0])
-
-    return np.round(distances, 4)
-
-
 @app.callback(Output('output-graph-sea', 'children'),
               Output({"type": "data-report", "index": 9}, 'data'),
               Input('dropdown-sea', 'value'))
@@ -2185,15 +1907,15 @@ def update_graph(value):
 
         if value == "euc":
             with Pool(round(n_cpu * 0.75)) as pool:
-                mats_dist = pool.starmap(pairwise_euclidean_distance,
+                mats_dist = pool.starmap(PriMet.SEA.pairwise_euclidean_distance,
                                          zip(repeat(real_data), synthetic_datasets))
         elif value == "cos":
             with Pool(round(n_cpu * 0.75)) as pool:
-                mats_dist = pool.starmap(str_similarity,
+                mats_dist = pool.starmap(PriMet.SEA.str_similarity,
                                          zip(repeat(real_data), synthetic_datasets))
         elif value == "hau":
             with Pool(round(n_cpu * 0.75)) as pool:
-                dists = pool.starmap(hausdorff_distance,
+                dists = pool.starmap(PriMet.SEA.hausdorff_distance,
                                      zip(repeat(real_data), synthetic_datasets))
 
         if value == "euc" or value == "cos":
@@ -2381,7 +2103,7 @@ def upload_train_dataset(contents, n_clicks):
         return False, 'primary'
 
     if contents is not None:
-        real_train_data = parse_contents(contents)
+        real_train_data = utils.parse_contents(contents)
 
         if list(real_data.columns) == list(real_train_data.columns):
             return False, 'success'
@@ -2399,17 +2121,6 @@ def enable_submit(color):
         return True
 
 
-def membership_inference_attack(real_subset_attacker, label_membership_train, synthetic, threshold):
-    distances = cosine_similarity(real_subset_attacker, synthetic)
-
-    records_identified = (distances > threshold).any(axis=1)  # if TRUE, the real row is identified
-
-    precision_attacker = precision_score(label_membership_train, records_identified)
-    accuracy_attacker = accuracy_score(label_membership_train, records_identified)
-
-    return precision_attacker, accuracy_attacker
-
-
 @app.callback(Output('output-mia', 'children'),
               Output({"type": "data-report", "index": 10}, 'data'),
               Input('run-mia', 'n_clicks'),
@@ -2425,7 +2136,7 @@ def run_code_on_click(click, prop_subset, t_similarity):
                                   for row in real_subset.itertuples(index=False)]
 
         with Pool(round(n_cpu * 0.75)) as pool:
-            results_mia = pool.starmap(membership_inference_attack,
+            results_mia = pool.starmap(PriMet.MIA.simulate_mia,
                                        zip(repeat(real_subset), repeat(label_membership_train), synthetic_datasets,
                                            repeat(t_similarity)))
 
@@ -2577,55 +2288,6 @@ def enable_submit(value):
         return True
 
 
-def attribute_inference_attack(real, synthetic, QID_features_names, target_features_names, dict_type):
-    real_subset_attacker = real[QID_features_names]
-
-    train_synthetic_data_QID = synthetic[QID_features_names]
-
-    train_features_type = {key: dict_type[key] for key in QID_features_names}
-
-    train_numeric_features = [key for key, value in train_features_type.items() if value == "numerical"]
-    train_categorical_features = [key for key, value in train_features_type.items() if value == "categorical"]
-
-    numeric_transformer = StandardScaler()
-    data = pd.concat([train_synthetic_data_QID, real_subset_attacker], ignore_index=True)
-    categories_list = [np.unique(data[col]) for col in train_categorical_features]
-    categorical_transformer = OneHotEncoder(categories=categories_list)
-
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("numeric", numeric_transformer, train_numeric_features),
-            ("categorical", categorical_transformer, train_categorical_features)
-        ])
-
-    train_data_preprocessed = preprocessor.fit_transform(train_synthetic_data_QID)
-    test_data_preprocessed = preprocessor.transform(real_subset_attacker)
-
-    results = list()
-
-    for target_name in target_features_names:
-
-        if dict_features_type[target_name] == "numerical":
-
-            model = DecisionTreeRegressor(random_state=23)
-            model.fit(train_data_preprocessed, synthetic[target_name])
-            predictions = model.predict(test_data_preprocessed)
-            results.append(
-                ['rmse', target_name, np.round(mean_squared_error(real[target_name], predictions, squared=False), 4),
-                 str([np.round(np.percentile(real[target_name], 25), 4),
-                      np.round(np.percentile(real[target_name], 75), 4)])])
-
-        else:
-
-            model = DecisionTreeClassifier(random_state=23)
-            model.fit(train_data_preprocessed, synthetic[target_name].astype(str))
-            predictions = model.predict(test_data_preprocessed)
-            results.append(
-                ['acc', target_name, np.round(accuracy_score(real[target_name].astype(str), predictions), 4), []])
-
-    return pd.DataFrame(results, columns=['Metric name', 'Target name', 'Value', 'IQR target'])
-
-
 @app.callback(Output('output-aia', 'children'),
               Output({"type": "data-report", "index": 11}, 'data'),
               Input('run-aia', 'n_clicks'),
@@ -2638,7 +2300,7 @@ def run_code_on_click(click, prop_subset, attributes):
         targets = [col for col in real_data.columns if col not in attributes]
 
         with Pool(round(n_cpu * 0.75)) as pool:
-            results_aia = pool.starmap(attribute_inference_attack,
+            results_aia = pool.starmap(PriMet.AIA.simulate_aia,
                                        zip(repeat(real_subset), synthetic_datasets,
                                            repeat(attributes), repeat(targets), repeat(dict_features_type)))
 
@@ -3293,7 +2955,7 @@ def upload_train_dataset(contents):
         return 'primary'
 
     if contents is not None:
-        real_train_data = parse_contents(contents)
+        real_train_data = utils.parse_contents(contents)
 
         if list(real_data.columns) == list(real_train_data.columns):
             for col in real_data.columns:
@@ -3317,7 +2979,7 @@ def upload_test_dataset(contents):
         return 'primary'
 
     if contents is not None:
-        real_test_data = parse_contents(contents)
+        real_test_data = utils.parse_contents(contents)
 
         if list(real_data.columns) == list(real_test_data.columns):
             for col in real_data.columns:
@@ -3341,7 +3003,7 @@ def upload_train_dataset(contents):
         return 'primary'
 
     if contents is not None:
-        real_train_data = parse_contents(contents)
+        real_train_data = utils.parse_contents(contents)
 
         if list(real_data.columns) == list(real_train_data.columns):
             for col in real_data.columns:
@@ -3419,15 +3081,15 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
 
                     if value == 'ks_test':
                         with Pool(round(n_cpu * 0.25)) as pool:
-                            dict_pvalues = pool.starmap(ks_tests,
+                            dict_pvalues = pool.starmap(ResMet.URA.ks_tests,
                                                         zip(repeat(real_data[num_features]), synthetic_datasets))
                     elif value == 't_test':
                         with Pool(round(n_cpu * 0.25)) as pool:
-                            dict_pvalues = pool.starmap(student_t_tests,
+                            dict_pvalues = pool.starmap(ResMet.URA.student_t_tests,
                                                         zip(repeat(real_data[num_features]), synthetic_datasets))
                     elif value == 'u_test':
                         with Pool(round(n_cpu * 0.25)) as pool:
-                            dict_pvalues = pool.starmap(mann_whitney_tests,
+                            dict_pvalues = pool.starmap(ResMet.URA.mann_whitney_tests,
                                                         zip(repeat(real_data[num_features]), synthetic_datasets))
 
                     threshold = 0.05
@@ -3442,7 +3104,7 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
 
                     if value == 'chi_test':
                         with Pool(round(n_cpu * 0.25)) as pool:
-                            dict_pvalues = pool.starmap(chi_squared_tests,
+                            dict_pvalues = pool.starmap(ResMet.URA.chi_squared_tests,
                                                         zip(repeat(real_data[cat_features]), synthetic_datasets))
 
                     threshold = 0.05
@@ -3457,15 +3119,15 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
 
                     if value == 'cos_dist':
                         with Pool(round(n_cpu * 0.25)) as pool:
-                            dict_distances = pool.starmap(cosine_distances,
+                            dict_distances = pool.starmap(ResMet.URA.cosine_distances,
                                                           zip(repeat(real_data[num_features]), synthetic_datasets))
                     elif value == 'js_dist':
                         with Pool(round(n_cpu * 0.25)) as pool:
-                            dict_distances = pool.starmap(js_distances,
+                            dict_distances = pool.starmap(ResMet.URA.js_distances,
                                                           zip(repeat(real_data[num_features]), synthetic_datasets))
                     elif value == 'w_dist':
                         with Pool(round(n_cpu * 0.25)) as pool:
-                            dict_distances = pool.starmap(wass_distances,
+                            dict_distances = pool.starmap(ResMet.URA.wass_distances,
                                                           zip(repeat(real_data[num_features]), synthetic_datasets))
 
                     mean_list = [sum(d.values()) / len(d) for d in dict_distances]
@@ -3521,11 +3183,11 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
             for item in list_mra:
 
                 if item == "corr_num":
-                    mat_real = compute_correlations_matrices(real_data, "corr_num")
+                    mat_real = ResMet.MRA.compute_correlations_matrices(real_data, "corr_num", num_features)
 
                     with Pool(round(n_cpu * 0.25)) as pool:
-                        mats_syns = pool.starmap(compute_correlations_matrices,
-                                                 zip(synthetic_datasets, repeat("corr_num")))
+                        mats_syns = pool.starmap(ResMet.MRA.compute_correlations_matrices,
+                                                 zip(synthetic_datasets, repeat("corr_num"), repeat(num_features)))
 
                     mats_diff = [np.abs(mat_real - mat_syn) for mat_syn in mats_syns]
                     mean_diffs = [round(np.nanmean(mat_diff.values[np.triu_indices(len(mat_diff), k=1)]), 4) for mat_diff
@@ -3535,11 +3197,11 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
                     ranking_resemblance.append(ranking_list)
 
                 elif item == "corr_cat":
-                    mat_real = compute_correlations_matrices(real_data, "corr_cat")
+                    mat_real = ResMet.MRA.compute_correlations_matrices(real_data, "corr_cat", cat_features)
 
                     with Pool(round(n_cpu * 0.25)) as pool:
-                        mats_syns = pool.starmap(compute_correlations_matrices,
-                                                 zip(synthetic_datasets, repeat("corr_cat")))
+                        mats_syns = pool.starmap(ResMet.MRA.compute_correlations_matrices,
+                                                 zip(synthetic_datasets, repeat("corr_cat"), repeat(cat_features)))
 
                     mats_diff = [np.abs(mat_real - mat_syn) for mat_syn in mats_syns]
                     mean_diffs = [np.nanmean(mat_diff.values[np.triu_indices(len(mat_diff), k=1)]) for mat_diff in
@@ -3549,10 +3211,10 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
                     ranking_resemblance.append(ranking_list)
 
                 elif item == "pca":
-                    real_var_ratio_cum = do_pca(real_data)
+                    real_var_ratio_cum = ResMet.MRA.do_pca(real_data)
 
                     with Pool(round(n_cpu * 0.25)) as pool:
-                        syns_var_ratio_cum = pool.map(do_pca, synthetic_datasets)
+                        syns_var_ratio_cum = pool.map(ResMet.MRA.do_pca, synthetic_datasets)
 
                     rmse_pca = [round(mean_squared_error(real_var_ratio_cum, s, squared=False)) for s in syns_var_ratio_cum]
                     ranking_list = stats.rankdata(rmse_pca, method='min')
@@ -3602,7 +3264,7 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
         # DLA ranking calculation
         if list_dla:
             with Pool(round(n_cpu * 0.25)) as pool:
-                results_dla = pool.starmap(classify_real_vs_synthetic_data,
+                results_dla = pool.starmap(ResMet.DLA.classify_real_vs_synthetic_data,
                                            zip(repeat(list_dla), repeat(real_data.copy()),
                                                synthetic_datasets.copy(),
                                                repeat(num_features), repeat(cat_features)))
@@ -3647,6 +3309,8 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
             content_resemblance.append(html.Hr())
 
             data_ranking_resemblance.append({"Data labeling analysis": ranking_list_dla})
+
+            data_report_tbl['Data Labeling Analysis'] = [values]
 
         # Ranking comparison figure (resemblance)
         if len(ranking_resemblance) > 1:
@@ -3737,7 +3401,7 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
                 train_labels_s.append(train_labels)
 
             with Pool(round(n_cpu * 0.25)) as pool:
-                results_utl = pool.starmap(train_test_model,
+                results_utl = pool.starmap(UtiMet.train_test_model,
                                            zip(repeat(classifier), [train_data_r] + train_data_s, repeat(test_data_r),
                                                [train_labels_r] + train_labels_s, repeat(test_labels_r),
                                                repeat(num), repeat(cat)))
@@ -3787,21 +3451,23 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
 
             data_ranking_utility.append({"TRTR-TSTR analysis": ranking_list_utl})
 
+            data_report_tbl['TRTR-TSTR Analysis'] = [values]
+
         # SEA ranking calculation
         if list_sea:
             if list_sea == "euc":
                 with Pool(round(n_cpu * 0.40)) as pool:
-                    mats_dist = pool.starmap(pairwise_euclidean_distance,
+                    mats_dist = pool.starmap(PriMet.SEA.pairwise_euclidean_distance,
                                              zip(repeat(real_data), synthetic_datasets))
                     dists = [np.mean(array, axis=None) for array in mats_dist]
             elif list_sea == "cos":
                 with Pool(round(n_cpu * 0.40)) as pool:
-                    mats_dist = pool.starmap(str_similarity,
+                    mats_dist = pool.starmap(PriMet.SEA.str_similarity,
                                              zip(repeat(real_data), synthetic_datasets))
                     dists = [np.mean(1 - array, axis=None) for array in mats_dist]
             elif list_sea == "hau":
                 with Pool(round(n_cpu * 0.40)) as pool:
-                    dists = pool.starmap(hausdorff_distance,
+                    dists = pool.starmap(PriMet.SEA.hausdorff_distance,
                                          zip(repeat(real_data), synthetic_datasets))
 
             ranking_list_sea = len(synthetic_datasets) + 1 - stats.rankdata(dists, method='max')
@@ -3844,6 +3510,8 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
 
             data_ranking_privacy.append({"Similarity evaluation analysis": ranking_list_sea})
 
+            data_report_tbl['Similarity Evaluation Analysis'] = [values]
+
         # MIA ranking calculation
         if list_mia:
             prop_subset = opt_mia[0]
@@ -3854,7 +3522,7 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
                                       for row in real_subset.itertuples(index=False)]
 
             with Pool(round(n_cpu * 0.40)) as pool:
-                results_mia = pool.starmap(membership_inference_attack,
+                results_mia = pool.starmap(PriMet.MIA.simulate_mia,
                                            zip(repeat(real_subset), repeat(label_membership_train), synthetic_datasets,
                                                repeat(t_similarity)))
 
@@ -3899,6 +3567,8 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
 
             data_ranking_privacy.append({"Membership inference attack": ranking_list_mia})
 
+            data_report_tbl['Membership Inference Attack'] = [values]
+
         # AIA ranking calculation
         if list_aia:
             prop_subset = opt_aia[0]
@@ -3907,7 +3577,7 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
             targets = [col for col in real_data.columns if col not in attributes]
 
             with Pool(round(n_cpu * 0.40)) as pool:
-                results_aia = pool.starmap(attribute_inference_attack,
+                results_aia = pool.starmap(PriMet.AIA.simulate_aia,
                                            zip(repeat(real_subset), synthetic_datasets,
                                                repeat(attributes), repeat(targets), repeat(dict_features_type)))
 
@@ -3962,6 +3632,8 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
             content_privacy.append(html.Hr())
 
             data_ranking_privacy.append({"Attribute inference attack": ranking_list_aia})
+
+            data_report_tbl['Attribute Inference Attack'] = [values]
 
         # Ranking comparison figure (privacy)
         if len(ranking_privacy) > 1:
@@ -4531,12 +4203,9 @@ def generate_and_download_report(n_clicks, pathname, data_report):
             </body>
         </html>'''
 
-        file_path = 'data_report/Report Resemblance URA.html'
-        with open(file_path, 'w') as f:
-            f.write(html_string)
-
-        path = os.path.abspath('data_report/Report Resemblance URA.html')
-        converter.convert(f'file:///{path}', 'data_report/Report Resemblance URA.pdf')
+        utils.convert_html_to_pdf('data_report/Report Resemblance URA.html',
+                                  html_string,
+                                  'data_report/Report Resemblance URA.pdf')
 
         return dcc.send_file('data_report/Report Resemblance URA.pdf')
 
@@ -4696,12 +4365,9 @@ def generate_and_download_report(n_clicks, pathname, data_report):
             </body>
         </html>'''
 
-        file_path = 'data_report/Report Resemblance MRA.html'
-        with open(file_path, 'w') as f:
-            f.write(html_string)
-
-        path = os.path.abspath('data_report/Report Resemblance MRA.html')
-        converter.convert(f'file:///{path}', 'data_report/Report Resemblance MRA.pdf')
+        utils.convert_html_to_pdf('data_report/Report Resemblance MRA.html',
+                                  html_string,
+                                  'data_report/Report Resemblance MRA.pdf')
 
         return dcc.send_file('data_report/Report Resemblance MRA.pdf')
 
@@ -4744,12 +4410,9 @@ def generate_and_download_report(n_clicks, pathname, data_report):
             </body>
         </html>'''
 
-        file_path = 'data_report/Report Resemblance DLA.html'
-        with open(file_path, 'w') as f:
-            f.write(html_string)
-
-        path = os.path.abspath('data_report/Report Resemblance DLA.html')
-        converter.convert(f'file:///{path}', 'data_report/Report Resemblance DLA.pdf')
+        utils.convert_html_to_pdf('data_report/Report Resemblance DLA.html',
+                                  html_string,
+                                  'data_report/Report Resemblance DLA.pdf')
 
         return dcc.send_file('data_report/Report Resemblance DLA.pdf')
 
@@ -4826,12 +4489,9 @@ def generate_and_download_report(n_clicks, pathname, data_report):
             </body>
         </html>'''
 
-        file_path = 'data_report/Report Utility.html'
-        with open(file_path, 'w') as f:
-            f.write(html_string)
-
-        path = os.path.abspath('data_report/Report Utility.html')
-        converter.convert(f'file:///{path}', 'data_report/Report Utility.pdf')
+        utils.convert_html_to_pdf('data_report/Report Utility.html',
+                                  html_string,
+                                  'data_report/Report Utility.pdf')
 
         return dcc.send_file('data_report/Report Utility.pdf')
 
@@ -4889,12 +4549,9 @@ def generate_and_download_report(n_clicks, pathname, data_report):
             </body>
         </html>'''
 
-        file_path = 'data_report/Report Privacy SEA.html'
-        with open(file_path, 'w') as f:
-            f.write(html_string)
-
-        path = os.path.abspath('data_report/Report Privacy SEA.html')
-        converter.convert(f'file:///{path}', 'data_report/Report Privacy SEA.pdf')
+        utils.convert_html_to_pdf('data_report/Report Privacy SEA.html',
+                                  html_string,
+                                  'data_report/Report Privacy SEA.pdf')
 
         return dcc.send_file('data_report/Report Privacy SEA.pdf')
 
@@ -4936,12 +4593,9 @@ def generate_and_download_report(n_clicks, pathname, data_report):
             </body>
         </html>'''
 
-        file_path = 'data_report/Report Privacy MIA.html'
-        with open(file_path, 'w') as f:
-            f.write(html_string)
-
-        path = os.path.abspath('data_report/Report Privacy MIA.html')
-        converter.convert(f'file:///{path}', 'data_report/Report Privacy MIA.pdf')
+        utils.convert_html_to_pdf('data_report/Report Privacy MIA.html',
+                                  html_string,
+                                  'data_report/Report Privacy MIA.pdf')
 
         return dcc.send_file('data_report/Report Privacy MIA.pdf')
 
@@ -4993,12 +4647,9 @@ def generate_and_download_report(n_clicks, pathname, data_report):
             </body>
         </html>'''
 
-        file_path = 'data_report/Report Privacy AIA.html'
-        with open(file_path, 'w') as f:
-            f.write(html_string)
-
-        path = os.path.abspath('data_report/Report Privacy AIA.html')
-        converter.convert(f'file:///{path}', 'data_report/Report Privacy AIA.pdf')
+        utils.convert_html_to_pdf('data_report/Report Privacy AIA.html',
+                                  html_string,
+                                  'data_report/Report Privacy AIA.pdf')
 
         return dcc.send_file('data_report/Report Privacy AIA.pdf')
 
@@ -5080,12 +4731,9 @@ def generate_and_download_report(n_clicks, pathname, data_report):
                     </body>
                 </html>'''
 
-        file_path = 'data_report/Report Benchmarking.html'
-        with open(file_path, 'w') as f:
-            f.write(html_string)
-
-        path = os.path.abspath('data_report/Report Benchmarking.html')
-        converter.convert(f'file:///{path}', 'data_report/Report Benchmarking.pdf')
+        utils.convert_html_to_pdf('data_report/Report Benchmarking.html',
+                                  html_string,
+                                  'data_report/Report Benchmarking.pdf')
 
         return dcc.send_file('data_report/Report Benchmarking.pdf')
 
