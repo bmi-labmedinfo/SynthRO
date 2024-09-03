@@ -3313,7 +3313,7 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
             data_report_tbl['Data Labeling Analysis'] = [values]
 
         # Ranking comparison figure (resemblance)
-        if len(ranking_resemblance) > 1:
+        if len(synthetic_datasets) > 1 and len(ranking_resemblance) > 1:
             cumulative_resemblance = compute_cumulative_rank(ranking_resemblance)
 
             fig_rank_resemblance = go.Figure()
@@ -3636,7 +3636,7 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
             data_report_tbl['Attribute Inference Attack'] = [values]
 
         # Ranking comparison figure (privacy)
-        if len(ranking_privacy) > 1:
+        if len(synthetic_datasets) > 1 and len(ranking_privacy) > 1:
             cumulative_privacy = compute_cumulative_rank(ranking_privacy)
 
             fig_rank_privacy = go.Figure()
@@ -3695,7 +3695,7 @@ def run_code_on_click(click, list_ura, list_mra, list_dla, list_utl, list_sea, l
 
         # Ranking comparison figure (all metrics)
         ranking_overall = ranking_resemblance + ranking_utility + ranking_privacy
-        if len(ranking_overall) > 1:
+        if len(synthetic_datasets) > 1 and len(ranking_overall) > 1:
             cumulative_overall = compute_cumulative_rank(ranking_overall)
 
             fig_rank_overall = go.Figure()
