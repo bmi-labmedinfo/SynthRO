@@ -1,0 +1,11 @@
+Feature,Type
+Clump_thickness,numerical
+Unif_Cell_Size,numerical
+Unif_Cell_Shape,numerical
+Marginal_Adhesion,numerical
+Single_Cell_Size,numerical
+Bare_Nuclei,numerical
+Bland_Chromatine,numerical
+Normal_Nucleoli,numerical
+Mitoses,numerical
+type,categorical
