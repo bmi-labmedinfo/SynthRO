@@ -12,6 +12,7 @@
   <ol>
     <li><a href="#about-the-project">About The Project</a></li>
     <li><a href="#installation">Installation</a></li>
+    <li><a href="#extensibility">Extensibility</a></li>
     <li><a href="#license">License</a></li>
   </ol>
 </details>
@@ -61,13 +62,44 @@ python SynthRO_app.py
 
 ### Additional Notes
 
-- To deactivate the environment, simply use:
+To deactivate the environment, simply use:
 
-    ```bash
-    conda deactivate
-    ```
+```bash
+conda deactivate
+```
 
-- You can now work within this Conda environment to run the application.
+<p align="right"><a href="#top">↰ Back To Top</a></p>
+
+> [!TIP]
+> If you want to try the tool, [here](example%20datasets/) you will find an example of an original and synthetic dataset.
+
+
+## Extensibility
+
+The tool has a modular structure, allowing new sections and evaluation metrics to be added at any time. 
+
+### Methodology
+
+Regarding the methodological part, the code should be integrated into one of the classes already implemented in the `utils.py` script. For instance, if you want to add a new type of simulated attack among the privacy metrics, it should be added as a static method of the `Privacy` class:
+
+```python
+class Privacy:
+
+    # Other implemented methods
+
+    @staticmethod
+    def new_simulated_attack():
+        # Code for the new method
+        pass
+```
+
+Afterwards, the new method must be invoked within the main script.
+
+### Graphical Interface
+
+The graphical interface was developed using the [Dash package](https://dash.plotly.com/) in Python. Once the new metric is defined, it can be integrated into the existing graphical elements or a new section can be created using the graphical elements provided by the package.
+
+The `SynthRO_app.py` script is divided into well-defined sections, making it easy for the user to locate new graphical elements.
 
 <p align="right"><a href="#top">↰ Back To Top</a></p>
 
