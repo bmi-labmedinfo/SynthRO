@@ -14,6 +14,7 @@
     <li><a href="#installation">Installation</a></li>
     <li><a href="#extensibility">Extensibility</a></li>
     <li><a href="#license">License</a></li>
+    <li><a href="#citation">Citation</a></li>
   </ol>
 </details>
 
@@ -108,4 +109,10 @@ The `SynthRO_app.py` script is divided into well-defined sections, making it eas
 SynthRO © 2024 by Gabriele Santangelo is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), click for more information.
 
 <p align="right"><a href="#top">↰ Back To Top</a></p>
+
+## Citation
+
+If you use SynthRO, please cite:
+
+Santangelo, G., Nicora, G., Bellazzi, R. and Dagliati, A. How good is your synthetic data? SynthRO, a dashboard to evaluate and benchmark synthetic tabular data. BMC Med Inform Decis Mak 25, 89 (2025). https://doi.org/10.1186/s12911-024-02731-9
 
